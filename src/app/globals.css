@@ -1,0 +1,736 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   Sathi design tokens.
+
+   The look is meant to read as Nepali print — lokta paper, risograph posters,
+   passport stamps, prayer flags — not as a SaaS dashboard. Practically that
+   means: warm paper instead of white, hard offset shadows instead of soft
+   blur, ink-weight borders, and the flag's crimson doing the heavy lifting.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   The palette lives here, once per theme, as plain custom properties. The
+   Tailwind tokens below point at these rather than carrying hexes of their
+   own, so switching theme is a single attribute on <html> and every utility
+   that already exists follows it — no per-component dark variants anywhere.
+
+   Dark is not an inverted greyscale. It is Tihar: a deep indigo-black night
+   with the diya colours lit against it.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  --bg: #fbf3e4; /* lokta / handmade paper */
+  --bg-deep: #f3e5c9;
+  --bg-soft: #fdf8ee;
+  --surface: #fffdf7;
+  /* One step up from a surface: hover, and any pressed-but-not-selected state. */
+  --surface-elevated: #f3e5c9;
+
+  --text-primary: #2a1b14; /* warm near-black, never pure #000 */
+  --text-secondary: #6b5647;
+  --text-faint: #a08b78;
+  /* Text sitting ON a filled accent, which is not the same thing as a
+     surface — the two only coincide in light mode. */
+  --on-accent: #fffdf7;
+  /* Marigold is light in both themes, so what sits on it never flips. */
+  --on-marigold: #2a1b14;
+
+  /* A selected control — an active filter, the current nav item. Not the same
+     as an accent: selection is structural, and dark mode wants a raised
+     neutral here rather than a slab of the brand red. */
+  --selected-bg: #2a1b14;
+  --on-selected: #fffdf7;
+
+  /* The wash behind a modal. Always dark, in both themes — a light scrim over
+     a dark page just fogs it. */
+  --scrim: color-mix(in oklab, #2a1b14 45%, transparent);
+
+  --accent-crimson: #c8102e; /* the flag's red */
+  --accent-crimson-deep: #8e0b21; /* pressed / hover */
+  --accent-crimson-wash: #fbe3e5;
+  --accent-indigo: #152a63; /* the flag's border blue, deepened */
+  --accent-indigo-soft: #3d55a0;
+  --accent-marigold: #e9a227; /* sayapatri */
+  --accent-marigold-wash: #fdf0d6;
+  --accent-turmeric: #c9761b;
+  --accent-jade: #2e6b52; /* hill green */
+
+  --lungta-blue: #1c5fa8;
+  --lungta-white: #f5f1e6;
+  --lungta-red: #c8102e;
+  --lungta-green: #2e6b52;
+  --lungta-yellow: #e9a227;
+
+  /* --- Layering ---------------------------------------------------------
+     The one z-index scale. Every element that stacks against something it
+     does not own reads a value from here, and no component invents a number
+     of its own — that is how a decorative card stack ended up painting over
+     the navbar: the hero deck's top card and the header were both z-40, so
+     the tie was broken by document order and the deck won.
+
+     Gaps of ten leave room to slot a layer in without renumbering.
+
+     Anything that only stacks against its own children does NOT belong here.
+     Isolate it instead (`isolate`, i.e. isolation: isolate) so its internal
+     ordering is sealed inside its own stacking context and can never reach
+     the header again. See HeroCardStack. */
+  --z-content: 1; /* ordinary page content, cards, the hero deck   */
+  --z-sticky: 10; /* sticky rail, sticky nav, drawer trigger       */
+  --z-header: 20; /* the navbar — above all page content           */
+  --z-dropdown: 30; /* menus, popovers, search results, the bell   */
+  --z-chat-widget: 40; /* Kura — under modals, over everything else */
+  --z-modal-overlay: 50; /* login modal, crop modal, nav drawer     */
+  --z-toast: 60; /* confirmations — visible even over a modal      */
+
+  /* --- The flag ---------------------------------------------------------
+     Fixed in both themes, deliberately, and not redefined in the dark block
+     below. A national flag does not restyle: the moon and sun were painted in
+     --color-snow, which is off-white in light and #1e1d22 in dark, so in dark
+     mode the white celestial symbols came out near-black on red. That is most
+     of why the mark stopped reading. White is white here. */
+  --flag-crimson: #c8102e;
+  --flag-blue: #152a63;
+  --flag-white: #ffffff;
+
+  /* Structure: the ink-weight border and the hard offset shadow. Separate
+     from text colour because on a dark ground a white border and a white
+     drop shadow would be a wall of glare. */
+  --line-strong: #2a1b14;
+  --line-soft: color-mix(in oklab, #2a1b14 14%, transparent);
+  --shadow-hard: #2a1b14;
+}
+
+/*
+ * Dark is flat, not lit.
+ *
+ * Four neutral levels, one shade of lightness apart — background, surface,
+ * elevated, border — and exactly one saturated colour allowed to carry the
+ * energy: crimson, on primary buttons and the given-dhog state. Everything
+ * else is muted. No gradients, no glow, no drop shadows: depth comes from the
+ * step between levels and from a border, the way Reddit's dark theme works.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #16151a;
+  --bg-soft: #1b1a1f; /* half a step up: section grounds */
+  --bg-deep: #1e1d22;
+  --surface: #1e1d22; /* cards */
+  --surface-elevated: #28272d; /* hover, active */
+
+  --text-primary: #e7e3dc; /* light grey, never pure white */
+  --text-secondary: #938d84;
+  --text-faint: #6e6961;
+  /* Dark text on a lit accent. #e7e3dc on the crimson below is only 3.0:1;
+     this way round it is 4.7:1 and passes AA. */
+  --on-accent: #16151a;
+  --on-marigold: #16151a;
+
+  --selected-bg: #302f36;
+  --on-selected: #e7e3dc;
+
+  --scrim: color-mix(in oklab, #000000 65%, transparent);
+
+  --accent-crimson: #e14c5c; /* the one colour that pops */
+  --accent-crimson-deep: #ea6373; /* hover lifts rather than deepens */
+  --accent-crimson-wash: #2a1b1f;
+  --accent-indigo: #7c8fc4; /* muted: links */
+  --accent-indigo-soft: #93a4d0;
+  --accent-marigold: #d9a24e; /* muted: the verified check */
+  --accent-marigold-wash: #2a2318;
+  --accent-turmeric: #b8863f;
+  --accent-jade: #5e8c74;
+
+  --lungta-blue: #4a6f9e;
+  --lungta-white: #b8b3aa;
+  --lungta-red: #b34450;
+  --lungta-green: #5e8c74;
+  --lungta-yellow: #b8863f;
+
+  --line-strong: #302f36;
+  --line-soft: #302f36;
+  /* Flat: no drop shadow at all. The border and the surface step do the work. */
+  --shadow-hard: transparent;
+}
+
+@theme {
+  /* --- Paper & ink ------------------------------------------------------ */
+  --color-paper: var(--bg);
+  --color-paper-deep: var(--bg-deep);
+  --color-paper-soft: var(--bg-soft);
+  --color-snow: var(--surface);
+  --color-ink: var(--text-primary);
+  --color-ink-soft: var(--text-secondary);
+  --color-ink-faint: var(--text-faint);
+  --color-on-accent: var(--on-accent);
+  --color-on-marigold: var(--on-marigold);
+  --color-elevated: var(--surface-elevated);
+  --color-selected: var(--selected-bg);
+  --color-on-selected: var(--on-selected);
+  --color-scrim: var(--scrim);
+
+  /* --- Flag & festival -------------------------------------------------- */
+  --color-crimson: var(--accent-crimson);
+  --color-crimson-deep: var(--accent-crimson-deep);
+  --color-crimson-wash: var(--accent-crimson-wash);
+  --color-indigo: var(--accent-indigo);
+  --color-indigo-soft: var(--accent-indigo-soft);
+  --color-marigold: var(--accent-marigold);
+  --color-marigold-wash: var(--accent-marigold-wash);
+  --color-turmeric: var(--accent-turmeric);
+  --color-jade: var(--accent-jade);
+
+  /* --- Structure -------------------------------------------------------- */
+  --color-line: var(--line-strong);
+  --color-line-soft: var(--line-soft);
+
+  /* --- Lungta (prayer flag) sequence ------------------------------------ */
+  --color-lungta-blue: var(--lungta-blue);
+  --color-lungta-white: var(--lungta-white);
+  --color-lungta-red: var(--lungta-red);
+  --color-lungta-green: var(--lungta-green);
+  --color-lungta-yellow: var(--lungta-yellow);
+
+  /* --- Type ------------------------------------------------------------- */
+  --font-display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-deva: var(--font-mukta), var(--font-jakarta), sans-serif;
+
+  /* --- Motion ----------------------------------------------------------- */
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* ===========================================================================
+   Layering utilities
+
+   Named after the layer, never after a number. `z-header` says what the thing
+   is; `z-40` said only where it happened to land, which is why two unrelated
+   elements could quietly agree on the same value.
+
+   Tailwind's own z-* utilities (z-10, z-50, …) still exist and still work —
+   they are simply not to be used for anything that stacks against another
+   component. Grep for `z-[0-9]` to find violations.
+   =========================================================================== */
+
+@utility z-content {
+  z-index: var(--z-content);
+}
+@utility z-sticky {
+  z-index: var(--z-sticky);
+}
+@utility z-header {
+  z-index: var(--z-header);
+}
+@utility z-dropdown {
+  z-index: var(--z-dropdown);
+}
+@utility z-chat-widget {
+  z-index: var(--z-chat-widget);
+}
+@utility z-modal-overlay {
+  z-index: var(--z-modal-overlay);
+}
+@utility z-toast {
+  z-index: var(--z-toast);
+}
+
+/* ===========================================================================
+   Base
+   =========================================================================== */
+
+/* In @layer base on purpose: unlayered rules beat every layer in Tailwind v4,
+   so leaving this bare would override .card and .btn's own border colours and
+   flatten the ink-weight border the whole design is built on. */
+@layer base {
+  * {
+    border-color: var(--line-soft);
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+
+  /*
+   * Always reserve the scrollbar's column, whether or not there is a scrollbar
+   * in it.
+   *
+   * Without this, anything that locks body scroll — the login modal, the
+   * mobile nav drawer — takes the scrollbar away, and every centred container
+   * on the page slides sideways by half its width while the page re-centres.
+   * Reserving the gutter permanently means removing the scrollbar costs
+   * nothing. It also stops the jump when navigating between a page that
+   * scrolls and one that does not.
+   */
+  scrollbar-gutter: stable;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* Faint paper tooth so large flat areas do not read as flat digital fill.
+     This is a light-mode idea — on paper it reads as warmth, on a dark ground
+     it reads as a light source that is not there. */
+  background-image:
+    radial-gradient(
+      circle at 12% 8%,
+      color-mix(in oklab, var(--color-marigold) 12%, transparent),
+      transparent 45%
+    ),
+    radial-gradient(
+      circle at 88% 4%,
+      color-mix(in oklab, var(--color-crimson) 8%, transparent),
+      transparent 40%
+    );
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="dark"] body {
+  background-image: none;
+}
+
+::selection {
+  background: var(--color-marigold);
+  color: var(--color-ink);
+}
+
+/* In @layer base so component rules can override it — an unlayered rule here
+   would win over .field:focus no matter how specific that is. */
+@layer base {
+  :focus-visible {
+    outline: 2.5px solid var(--color-indigo);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+/*
+ * If it does something when you press it, the cursor says so.
+ *
+ * Once, here, rather than a `cursor-pointer` class remembered on some buttons
+ * and forgotten on others — which is exactly how it drifted. Tailwind's reset
+ * sets `cursor: default` on button, so every plain <button> in the tree needed
+ * this and nothing had been giving it to them.
+ *
+ * Selected by role as well as by tag, because half the controls on this site
+ * are divs and spans doing a button's job inside a listbox or a menu.
+ *
+ * In @layer base so a component can still say otherwise: .btn:disabled sets
+ * not-allowed, and it has to win.
+ */
+@layer base {
+  a[href],
+  button,
+  summary,
+  label[for],
+  select,
+  [role="button"],
+  [role="menuitem"],
+  [role="menuitemradio"],
+  [role="option"],
+  [role="tab"],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"],
+  input[type="file"]::file-selector-button {
+    cursor: pointer;
+  }
+
+  /* Nothing that cannot be pressed pretends it can be. */
+  :disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.font-deva {
+  font-family: var(--font-deva);
+}
+
+/* ===========================================================================
+   Components
+   =========================================================================== */
+
+@layer components {
+  /* --- The lungta rail: five prayer-flag colours, top of every page ------ */
+  .lungta-rail {
+    height: 5px;
+    width: 100%;
+    background: linear-gradient(
+      to right,
+      var(--color-lungta-blue) 0 20%,
+      var(--color-lungta-white) 20% 40%,
+      var(--color-lungta-red) 40% 60%,
+      var(--color-lungta-green) 60% 80%,
+      var(--color-lungta-yellow) 80% 100%
+    );
+  }
+
+  /* --- Card: ink border + hard offset shadow, like a printed block ------- */
+  .card {
+    background: var(--color-snow);
+    border: 1.5px solid var(--line-strong);
+    border-radius: 10px;
+    box-shadow: 4px 4px 0 0 var(--shadow-hard);
+  }
+
+  .card-soft {
+    background: var(--color-paper-soft);
+    border: 1.5px solid color-mix(in oklab, var(--line-strong) 55%, transparent);
+    border-radius: 10px;
+  }
+
+  .card-lift {
+    transition:
+      transform 160ms var(--ease-snap),
+      box-shadow 160ms var(--ease-snap);
+  }
+
+  .card-lift:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0 0 var(--shadow-hard);
+  }
+
+  /* --- Buttons ---------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 8px;
+    border: 1.5px solid var(--line-strong);
+    padding: 0.6rem 1.15rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 0 var(--shadow-hard);
+    transition:
+      transform 120ms var(--ease-snap),
+      box-shadow 120ms var(--ease-snap),
+      background-color 120ms var(--ease-snap);
+  }
+
+  .btn:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 0 var(--shadow-hard);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 0 var(--shadow-hard);
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: 2px 2px 0 0 color-mix(in oklab, var(--shadow-hard) 40%, transparent);
+  }
+
+  .btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    box-shadow: 2.5px 2.5px 0 0 var(--shadow-hard);
+  }
+
+  .btn-primary {
+    background: var(--color-crimson);
+    color: var(--color-on-accent);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-crimson-deep);
+  }
+
+  .btn-indigo {
+    background: var(--color-indigo);
+    color: var(--color-on-accent);
+  }
+
+  .btn-marigold {
+    background: var(--color-marigold);
+    color: var(--color-on-marigold);
+  }
+
+  .btn-paper {
+    background: var(--color-snow);
+    color: var(--color-ink);
+  }
+
+  .btn-paper:hover:not(:disabled) {
+    background: var(--color-paper-deep);
+  }
+
+  .btn-ghost {
+    border-color: transparent;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+    background: color-mix(in oklab, var(--color-ink) 7%, transparent);
+  }
+
+  /* --- Form fields ------------------------------------------------------ */
+  .field {
+    width: 100%;
+    background: var(--color-snow);
+    /* Whole pixels, so the focus state below can trade exactly 1px of padding
+       for 1px of border without the box moving. Fractional widths get rounded
+       by the browser and the swap stops being exact. */
+    border: 2px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: var(--color-ink);
+    transition: box-shadow 120ms var(--ease-snap);
+  }
+
+  .field::placeholder {
+    color: var(--color-ink-faint);
+  }
+
+  /*
+   * Focus recolours the border a field already has. It does not thicken it and
+   * it does not add anything: an outline or an offset shadow on top of the
+   * border reads as two rings stacked on one box, and a heavier border on
+   * focus turns out to look clumsy rather than emphatic.
+   *
+   * Because only the colour changes, nothing can reflow — no padding
+   * compensation needed anywhere.
+   */
+  .field:focus,
+  .field:focus-visible {
+    outline: none;
+    box-shadow: none;
+    border-color: var(--accent-crimson);
+  }
+
+  /*
+   * A shorter field, for the search that sits in the header rather than in a
+   * form. The left padding leaves room for the magnifier.
+   */
+  .field-search {
+    padding: 0.4rem 0.85rem 0.4rem 2.25rem;
+    font-size: 0.875rem;
+  }
+
+  /*
+   * A select with its box taken away: no border, no fill, no native arrow —
+   * just the value and a chevron the same weight as the text beside it. For
+   * controls that adjust what you are already looking at, where a bordered
+   * box reads as a button that does something.
+   *
+   * The chevron is drawn next to it in markup, so the padding-right here is
+   * the room that chevron sits in.
+   */
+  .select-bare {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    padding: 0.15rem 1.1rem 0.15rem 0;
+    cursor: pointer;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+    margin-bottom: 0.4rem;
+  }
+
+  /* --- Eyebrow / small caps label --------------------------------------- */
+  .eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-crimson);
+  }
+
+  /* --- Verification stamp: a passport/visa stamp, deliberately askew ----- */
+  .stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 2px solid var(--color-crimson);
+    color: var(--color-crimson);
+    border-radius: 999px;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transform: rotate(-3deg);
+    background: color-mix(in oklab, var(--color-crimson) 6%, var(--color-snow));
+  }
+
+  .stamp-founding {
+    border-color: var(--color-turmeric);
+    color: var(--color-turmeric);
+    background: color-mix(in oklab, var(--color-marigold) 14%, var(--color-snow));
+    transform: rotate(2deg);
+  }
+
+  .stamp-pending {
+    border-color: var(--color-indigo);
+    color: var(--color-indigo);
+    background: color-mix(in oklab, var(--color-indigo) 6%, var(--color-snow));
+    transform: rotate(-1.5deg);
+  }
+
+  /* --- Chip ------------------------------------------------------------- */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1.5px solid color-mix(in oklab, var(--color-ink) 30%, transparent);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: var(--color-paper-soft);
+  }
+
+  /* --- Aankhijhyal: Newari lattice window, as a background texture ------- */
+  .lattice {
+    background-color: var(--color-paper-deep);
+    background-image:
+      repeating-linear-gradient(
+        45deg,
+        color-mix(in oklab, var(--color-turmeric) 20%, transparent) 0 1.5px,
+        transparent 1.5px 14px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        color-mix(in oklab, var(--color-turmeric) 20%, transparent) 0 1.5px,
+        transparent 1.5px 14px
+      );
+  }
+
+  /* Flat in dark — the woven texture is a paper idea, and at these values it
+     reads as dirt on the screen rather than as a lattice window. */
+  :root[data-theme="dark"] .lattice {
+    background-image: none;
+  }
+
+  /* --- Marigold garland divider ----------------------------------------- */
+  .garland {
+    height: 14px;
+    background-image: radial-gradient(
+      circle at center,
+      var(--color-marigold) 0 3.5px,
+      transparent 3.8px
+    );
+    background-size: 18px 14px;
+    background-repeat: repeat-x;
+    background-position: center;
+  }
+
+  /* --- Lungta bunting divider ------------------------------------------- */
+  .lungta-flags {
+    overflow: hidden;
+    line-height: 0;
+  }
+
+  /* The svg is a tile wider than its box and pulled left by half of that, so
+     the sway can never drag a bare edge into view. */
+  .lungta-flags > svg {
+    display: block;
+    width: calc(100% + 90px);
+    margin-left: -45px;
+    animation: lungta-sway 9s ease-in-out infinite;
+  }
+
+  /* --- Live dot: "someone is here right now" ---------------------------- */
+  .pulse-dot {
+    animation: pulse-dot 2.4s ease-in-out infinite;
+  }
+
+  /* --- Post body: preserve author line breaks --------------------------- */
+  .prose-post {
+    white-space: pre-wrap;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+
+  /* --- Underline flourish for links in body copy ------------------------ */
+  .link-ink {
+    color: var(--color-indigo);
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+    text-decoration-color: color-mix(in oklab, var(--color-indigo) 40%, transparent);
+  }
+
+  .link-ink:hover {
+    text-decoration-color: var(--color-indigo);
+  }
+}
+
+/* Wide content must scroll inside itself, never the page body. */
+.scroll-x {
+  overflow-x: auto;
+}
+
+@keyframes lungta-sway {
+  0%,
+  100% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    /* Without this, an `infinite` animation run at 0.01ms flickers instead of
+       stopping — which is the opposite of what was asked for. */
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

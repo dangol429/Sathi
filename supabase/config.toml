@@ -1,0 +1,41 @@
+project_id = "sathi"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "10MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Local only: skip the confirmation email so seeded/dev accounts log straight in.
+enable_confirmations = false
+
+# Fill these in from the Google Cloud console to test the professional signup
+# path locally, then flip enabled to true.
+[auth.external.google]
+enabled = false
+client_id = ""
+secret = ""
+redirect_uri = "http://localhost:54321/auth/v1/callback"
