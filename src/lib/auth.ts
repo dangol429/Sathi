@@ -21,6 +21,14 @@ export type Viewer = {
  */
 export const getViewer = cache(async (): Promise<Viewer | null> => {
   const supabase = await createClient();
+  /*
+   * No Supabase project configured means nobody is signed in — the same answer
+   * as an expired cookie, and the answer the whole app is already written for.
+   *
+   * This is called from the root layout, so it runs on every render of every
+   * page. Throwing here took the site down as thoroughly as the middleware did.
+   */
+  if (!supabase) return null;
 
   const {
     data: { user },

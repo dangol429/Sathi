@@ -44,6 +44,17 @@ cp .env.local.example .env.local
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally; your domain in production |
 | `NEXT_PUBLIC_USE_MOCK_DATA` | `true` (or unset) runs the feed, profiles, settings and onboarding step 3 on fixtures; `false` takes the Supabase branch. See [Mock or real](#mock-or-real) |
 
+**None of the Supabase variables are required.** With the two `NEXT_PUBLIC_SUPABASE_*` values
+unset, `SUPABASE_CONFIGURED` in `src/lib/supabase/env.ts` is false and every client constructor
+returns `null` instead of throwing: middleware steps aside, `getViewer()` reports nobody signed
+in, and the queries return empty. The whole mock-data app works; only accounts are unavailable,
+and the sign-up form says so.
+
+That is a supported deployment state, and it is what the site ships in until the Supabase
+project exists. It used to be a crash — the constructors read these variables with `!` non-null
+assertions, so an unset value threw in middleware, which runs before every request and turned
+one missing variable into `MIDDLEWARE_INVOCATION_FAILED` on every route.
+
 ### 3. Create the schema
 
 **Local (Docker required):**

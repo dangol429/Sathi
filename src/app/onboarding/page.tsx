@@ -17,14 +17,23 @@ export default async function OnboardingPage() {
   const viewer = await requireViewer("/onboarding");
 
   const [niches, supabase] = await Promise.all([getActiveNiches(), createClient()]);
-  const [{ data: response }, { data: userNiches }] = await Promise.all([
-    supabase
-      .from("onboarding_responses")
-      .select("self_description, goals")
-      .eq("user_id", viewer.id)
-      .maybeSingle(),
-    supabase.from("user_niches").select("niche_id").eq("user_id", viewer.id),
-  ]);
+
+  /*
+   * Unreachable in practice — requireViewer() above cannot return without a
+   * session, and there are no sessions without a Supabase project. Handled
+   * rather than asserted because the alternative is a non-null assertion, and
+   * those are exactly what took the deployment down.
+   */
+  const [{ data: response }, { data: userNiches }] = supabase
+    ? await Promise.all([
+        supabase
+          .from("onboarding_responses")
+          .select("self_description, goals")
+          .eq("user_id", viewer.id)
+          .maybeSingle(),
+        supabase.from("user_niches").select("niche_id").eq("user_id", viewer.id),
+      ])
+    : [{ data: null }, { data: null }];
 
   const firstName = viewer.fullName?.split(/\s+/)[0];
 

@@ -21,6 +21,10 @@ export async function approveProfessional(
   if (!profileId) return { error: "Missing profile." };
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
   const { error } = await supabase.rpc("approve_professional", { p_profile_id: profileId });
 
   if (error) return { error: error.message };
@@ -41,6 +45,10 @@ export async function rejectProfessional(
   if (!profileId) return { error: "Missing profile." };
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
   const { error } = await supabase.rpc("reject_professional", {
     p_profile_id: profileId,
     p_note: note || null,

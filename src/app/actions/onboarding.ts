@@ -55,6 +55,10 @@ export async function completeOnboarding(
   }
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
 
   const { error: nameError } = await supabase
     .from("users")

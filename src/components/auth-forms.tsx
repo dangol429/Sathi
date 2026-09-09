@@ -4,6 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+/**
+ * Shown when the deployment has no Supabase project behind it. The app runs on
+ * mock data in that state, so everything except accounts still works — this
+ * says so rather than letting the button throw.
+ */
+const NOT_CONFIGURED = "Accounts are not set up on this deployment yet.";
+
 function callbackUrl(next: string) {
   const origin =
     typeof window !== "undefined"
@@ -26,6 +33,11 @@ export function GoogleButton({
     setError(null);
     startTransition(async () => {
       const supabase = createClient();
+      if (!supabase) {
+        setError(NOT_CONFIGURED);
+        return;
+      }
+
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -78,6 +90,10 @@ export function EmailAuthForm({
 
     startTransition(async () => {
       const supabase = createClient();
+      if (!supabase) {
+        setError(NOT_CONFIGURED);
+        return;
+      }
 
       if (mode === "signup") {
         const { data, error: signUpError } = await supabase.auth.signUp({

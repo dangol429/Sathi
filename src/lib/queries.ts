@@ -77,6 +77,8 @@ function normalisePosts(rows: RawFeedPost[] | null): FeedPost[] {
 
 export async function getActiveNiches(): Promise<NicheRow[]> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return [];
   const { data } = await supabase
     .from("niches")
     .select("*")
@@ -87,6 +89,8 @@ export async function getActiveNiches(): Promise<NicheRow[]> {
 
 export async function getNicheBySlug(slug: string): Promise<NicheRow | null> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return null;
   const { data } = await supabase.from("niches").select("*").eq("slug", slug).maybeSingle();
   return data ?? null;
 }
@@ -100,6 +104,8 @@ export async function getRecentPosts({
   limit = 12,
 }: { nicheId?: string; limit?: number } = {}): Promise<FeedPost[]> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return [];
 
   let query = supabase
     .from("posts")
@@ -120,6 +126,8 @@ export async function getRecentPosts({
 
 export async function getPostsForSpace(spaceId: string, limit = 50): Promise<FeedPost[]> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return [];
   const { data, error } = await supabase
     .from("posts")
     .select(POST_SELECT)
@@ -136,6 +144,8 @@ export async function getPostsForSpace(spaceId: string, limit = 50): Promise<Fee
 
 export async function getPost(postId: string): Promise<FeedPost | null> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return null;
   const { data, error } = await supabase
     .from("posts")
     .select(POST_SELECT)
@@ -156,6 +166,8 @@ export type ThreadComment = {
 
 export async function getComments(postId: string): Promise<ThreadComment[]> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return [];
   const { data, error } = await supabase
     .from("comments")
     .select(
@@ -175,6 +187,8 @@ export async function getComments(postId: string): Promise<ThreadComment[]> {
 export async function getViewerReactions(postIds: string[]): Promise<Set<string>> {
   if (postIds.length === 0) return new Set();
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return new Set<string>();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -228,6 +242,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Accepts either a professional_profiles.id or a space slug. */
 export async function getSpace(handle: string): Promise<SpaceDetail | null> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return null;
   const query = supabase.from("spaces").select(SPACE_SELECT);
 
   const { data, error } = UUID_RE.test(handle)
@@ -254,6 +270,8 @@ export async function getVerifiedProfessionals({
   limit = 24,
 }: { nicheId?: string; limit?: number } = {}): Promise<ProfessionalCard[]> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return [];
 
   let query = supabase
     .from("professional_profiles")
@@ -289,6 +307,8 @@ export async function getVerifiedProfessionals({
 
 export async function getFollowerCount(professionalId: string): Promise<number> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return 0;
   const { count } = await supabase
     .from("follows")
     .select("*", { count: "exact", head: true })
@@ -298,6 +318,8 @@ export async function getFollowerCount(professionalId: string): Promise<number> 
 
 export async function isFollowing(professionalId: string, userId: string): Promise<boolean> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return false;
   const { data } = await supabase
     .from("follows")
     .select("professional_id")
@@ -329,6 +351,8 @@ export type ReviewRow = {
 
 export async function getReviewQueue(status: VerificationStatus): Promise<ReviewRow[]> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return [];
   const { data, error } = await supabase
     .from("professional_profiles")
     .select(
@@ -349,6 +373,8 @@ export async function getReviewQueue(status: VerificationStatus): Promise<Review
 
 export async function getVerifiedCount(): Promise<number> {
   const supabase = await createClient();
+  // No Supabase project configured — nothing to read.
+  if (!supabase) return 0;
   const { count } = await supabase
     .from("professional_profiles")
     .select("*", { count: "exact", head: true })

@@ -47,6 +47,8 @@ export async function saveProfessionalProfile(
   }
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
 
   const { error } = await supabase
     .from("professional_profiles")
@@ -91,6 +93,8 @@ async function createPostInternal(
   if (content.length > 8000) return { error: "That is over the 8,000 character limit." };
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
 
   const { data: space } = await supabase
     .from("spaces")

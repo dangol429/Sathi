@@ -14,6 +14,8 @@ export async function toggleHelpful(postId: string, pathToRevalidate: string) {
   if (!viewer) return;
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return;
 
   const { data: existing } = await supabase
     .from("reactions")
@@ -26,7 +28,9 @@ export async function toggleHelpful(postId: string, pathToRevalidate: string) {
   if (existing) {
     await supabase.from("reactions").delete().eq("id", existing.id);
   } else {
-    await supabase.from("reactions").insert({ user_id: viewer.id, post_id: postId, type: "helpful" });
+    await supabase
+      .from("reactions")
+      .insert({ user_id: viewer.id, post_id: postId, type: "helpful" });
   }
 
   revalidatePath(pathToRevalidate);
@@ -44,6 +48,8 @@ export async function addComment(_prev: ActionState, formData: FormData): Promis
   if (content.length > 4000) return { error: "That is over the 4,000 character limit." };
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return { error: "Accounts are not set up on this deployment yet." };
   const { error } = await supabase
     .from("comments")
     .insert({ post_id: postId, author_id: viewer.id, content });
@@ -59,6 +65,8 @@ export async function toggleFollow(professionalId: string, pathToRevalidate: str
   if (!viewer) return;
 
   const supabase = await createClient();
+  // No Supabase project configured on this deployment.
+  if (!supabase) return;
 
   const { data: existing } = await supabase
     .from("follows")
@@ -76,7 +84,11 @@ export async function toggleFollow(professionalId: string, pathToRevalidate: str
   } else {
     await supabase
       .from("follows")
-      .insert({ follower_id: viewer.id, professional_id: professionalId, created_at: new Date().toISOString() });
+      .insert({
+        follower_id: viewer.id,
+        professional_id: professionalId,
+        created_at: new Date().toISOString(),
+      });
   }
 
   revalidatePath(pathToRevalidate);

@@ -16,16 +16,23 @@ export async function GET(request: NextRequest) {
   const errorDescription = searchParams.get("error_description");
 
   if (errorDescription) {
-    return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(errorDescription)}`,
-    );
+    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(errorDescription)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent("Missing auth code")}`);
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent("Missing auth code")}`,
+    );
   }
 
   const supabase = await createClient();
+  // No Supabase project configured: there is no session to exchange for.
+  if (!supabase) {
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent("Accounts are not set up on this deployment yet.")}`,
+    );
+  }
+
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
