@@ -98,6 +98,16 @@ export type MockPost = {
   /** The count shown on the card. */
   comments: number;
   /**
+   * How many times this has been reposted, before counting your own.
+   *
+   * A baseline like `dhog` and `comments`, for the same reason: the fixtures
+   * describe a feed that has already been running, and seeding one repost
+   * record per historical repost would be inventing five people to make one
+   * number. The individual records in MOCK_REPOSTS are the ones that have to
+   * render a banner somewhere; this is only the total under the card.
+   */
+  reposts?: number;
+  /**
    * Epoch milliseconds, set when a post is written in this session. The
    * seeded posts deliberately have none: they are hours or days old, so the
    * edit window is long closed and the actions correctly never appear.
@@ -123,6 +133,7 @@ export const MOCK_POSTS: MockPost[] = [
       "Anyone know what stack Cedar Gate is actually using right now? Interviewing there next week and want to sound like I've done my homework.",
     dhog: 34,
     comments: 12,
+    reposts: 6,
   },
   {
     id: "mock-2",
@@ -133,6 +144,7 @@ export const MOCK_POSTS: MockPost[] = [
       "Running a free 30-min counselling session this Saturday for anyone confused about frontend vs backend. Comment if you want a slot.",
     dhog: 58,
     comments: 21,
+    reposts: 11,
   },
   {
     id: "mock-3",
@@ -143,6 +155,7 @@ export const MOCK_POSTS: MockPost[] = [
       "Started as a QA tester in 2016, no CS degree. Six years later I'm leading the platform team. Ask me anything about the jump.",
     dhog: 112,
     comments: 34,
+    reposts: 23,
   },
   {
     id: "mock-5",
@@ -153,6 +166,7 @@ export const MOCK_POSTS: MockPost[] = [
       "Cedar Gate's platform team is hiring two mid-level engineers. Comment if you want the referral, I'll take a look at your GitHub.",
     dhog: 94,
     comments: 27,
+    reposts: 14,
   },
   {
     id: "mock-6",
@@ -163,6 +177,7 @@ export const MOCK_POSTS: MockPost[] = [
       "Promoted three QA folks into engineering roles this year. If you're technical-adjacent and think you can't make the jump — you're wrong.",
     dhog: 143,
     comments: 19,
+    reposts: 9,
   },
   {
     id: "mock-4",
@@ -173,6 +188,49 @@ export const MOCK_POSTS: MockPost[] = [
       "Hot take: Nepali companies underpay engineers who could easily get remote US salaries. Change my mind.",
     dhog: 76,
     comments: 48,
+    reposts: 17,
+  },
+];
+
+/* --- Reposts --------------------------------------------------------------
+ *
+ * A repost is a pointer, never a copy. It carries no content of its own: it
+ * says "this person passed that post on", and the card underneath is still the
+ * original author's, with the original author's dhog and the original author's
+ * comment thread. Copying the content would fork it — two cards drifting apart
+ * the moment the author edits one of them.
+ *
+ * Only the two below are written out, both by people other than the signed-in
+ * user, so a repost is visible in the feed and on a profile without anybody
+ * having to press the button first. Everything the viewer reposts is added to
+ * this list at runtime and lasts as long as the tab.
+ * ------------------------------------------------------------------------- */
+
+export type MockRepost = {
+  id: string;
+  /** The post being passed on. Resolved against MOCK_POSTS when it renders. */
+  postId: string;
+  /** Who passed it on. */
+  by: MockAuthor;
+  /** Their profile, so the banner can link to them. */
+  bySlug: string;
+  postedAt: string;
+};
+
+export const MOCK_REPOSTS: MockRepost[] = [
+  {
+    id: "repost-nisha-1",
+    postId: "mock-3",
+    by: NISHA,
+    bySlug: "nisha-r",
+    postedAt: "1h ago",
+  },
+  {
+    id: "repost-aashish-1",
+    postId: "mock-4",
+    by: AASHISH,
+    bySlug: "aashish-k",
+    postedAt: "4h ago",
   },
 ];
 

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Pennant, VerifiedStamp } from "@/components/brand";
 import { useMockAuth } from "@/components/mock-auth";
 import { Dropdown } from "@/components/dropdown";
-import { PostCard, type Flagged, type Given } from "@/components/mock-post-card";
+import { PostCard, type Flagged, type Given, type Reposted } from "@/components/mock-post-card";
 import { PostComposer } from "@/components/post-composer-mock";
 import { ProfileAvatar, ProfileCover } from "@/components/profile-images";
 import {
@@ -15,13 +15,17 @@ import {
   getEducation,
   getPostsByAuthor,
   getProjects,
+  getRepostsBy,
   getSathiCount,
   getWorkExperience,
   giveDhog,
   removeDhog,
+  repost as apiRepost,
   saveProfileImage,
   sendSathiRequest,
+  unrepost as apiUnrepost,
 } from "@/lib/api";
+import { buildTimeline, type RepostEntry } from "@/lib/repost";
 import { useAsync } from "@/lib/api/use-async";
 import { useSathis, type SathiStatus } from "@/lib/api/use-sathis";
 import { POST_TYPES, type PostType } from "@/lib/feed";
@@ -131,9 +135,86 @@ function ProfileBody({ person: user, isOwn }: { person: MockPerson; isOwn: boole
   const hasMore = Boolean(about) || hasSections;
   const showMore = tab === "more" && hasMore;
 
+  /*
+   * Two different questions, so two different reads.
+   *
+   *   ownerReposts  what THIS person has passed on. It is their profile, so it
+   *                 is their activity that belongs in the timeline, whoever
+   *                 happens to be reading the page.
+   *   myReposts     what the VIEWER has passed on. This is what each repost
+   *                 button reflects, and on somebody else's profile it has
+   *                 nothing to do with the timeline underneath it.
+   *
+   * On your own profile the two are the same list, which is why the toggle
+   * below writes to the owner's copy only when it is in fact yours — otherwise
+   * reposting from somebody else's page would insert your repost into their
+   * timeline.
+   */
+  const { data: ownerReposts, setData: setOwnerReposts } = useAsync<RepostEntry[]>(
+    () => getRepostsBy(id),
+    [],
+    [id],
+  );
+  const { data: myReposts, setData: setMyReposts } = useAsync<RepostEntry[]>(
+    () => (viewer ? getRepostsBy(viewer.slug) : Promise.resolve([])),
+    [],
+    [viewer?.slug ?? ""],
+  );
+
+  const reposted: Reposted = {};
+  for (const entry of myReposts) reposted[entry.post.id] = true;
+
   const filtered = type === "all" ? posts : posts.filter((post) => post.type === type);
   // The feed comes back in recency order, so "recent" is the array as-is.
-  const visible = sort === "top" ? [...filtered].sort((a, b) => b.dhog - a.dhog) : filtered;
+  const ordered = sort === "top" ? [...filtered].sort((a, b) => b.dhog - a.dhog) : filtered;
+
+  /*
+   * Their own posts, with the things they have reposted woven in. The
+   * predicate is the type filter rather than "is it one of theirs" — a
+   * reposted post belongs to somebody else by definition, so testing for
+   * membership here would hide every repost on every profile.
+   */
+  const timeline = buildTimeline(
+    ordered,
+    ownerReposts,
+    (post) => type === "all" || post.type === type,
+  );
+  const visible =
+    sort === "top" ? [...timeline].sort((a, b) => b.post.dhog - a.post.dhog) : timeline;
+
+  function toggleRepost(postId: string) {
+    if (!viewer) return;
+    const known = [...ownerReposts, ...myReposts].find((candidate) => candidate.post.id === postId);
+    const post = known?.post ?? posts.find((candidate) => candidate.id === postId);
+    if (!post) return;
+
+    const mine = id === viewer.slug;
+
+    if (reposted[postId]) {
+      const drop = (current: RepostEntry[]) =>
+        current.filter(
+          (candidate) => !(candidate.post.id === postId && candidate.repost.bySlug === viewer.slug),
+        );
+      setMyReposts(drop);
+      if (mine) setOwnerReposts(drop);
+      void apiUnrepost(postId);
+      return;
+    }
+
+    const entry: RepostEntry = {
+      post,
+      repost: {
+        id: `repost-local-${Date.now()}`,
+        postId,
+        by: viewer,
+        bySlug: viewer.slug,
+        postedAt: "just now",
+      },
+    };
+    setMyReposts((current) => [entry, ...current]);
+    if (mine) setOwnerReposts((current) => [entry, ...current]);
+    void apiRepost(postId);
+  }
 
   function toggleDhog(postId: string) {
     const wasGiven = Boolean(given[postId]);
@@ -331,14 +412,17 @@ function ProfileBody({ person: user, isOwn }: { person: MockPerson; isOwn: boole
           {!showMore ? (
             visible.length > 0 ? (
               <div className="mt-5 space-y-5">
-                {visible.map((post) => (
+                {visible.map((entry) => (
                   <PostCard
-                    key={post.id}
-                    post={post}
+                    key={entry.key}
+                    post={entry.post}
+                    repostedBy={entry.repost}
                     given={given}
                     flagged={flagged}
+                    reposted={reposted}
                     onGive={toggleDhog}
                     onFlag={(postId) => setFlagged((c) => ({ ...c, [postId]: true }))}
+                    onRepost={toggleRepost}
                   />
                 ))}
               </div>

@@ -33,6 +33,7 @@ import {
   MOCK_NOTIFICATIONS,
   MOCK_PEOPLE,
   MOCK_POSTS,
+  MOCK_REPOSTS,
   MOCK_SATHI_EDGES,
   MOCK_SATHI_REQUESTS_IN,
   commentsFor,
@@ -46,9 +47,11 @@ import {
   type MockNotification,
   type MockPerson,
   type MockPost,
+  type MockRepost,
   type MockUser,
   type ProfileEntry,
 } from "@/lib/feed-mock";
+import type { RepostEntry } from "@/lib/repost";
 
 /* ---------------------------------------------------------------------------
  * Session-lifetime store.
@@ -76,6 +79,8 @@ const store = {
   /** Detail rows added at runtime, by profile id then section. */
   details: new Map<string, Partial<Record<DetailKind, ProfileEntry[]>>>(),
   deleted: new Set<string>(),
+  /** Reposts, seeded and then added to as the viewer passes things on. */
+  reposts: [...MOCK_REPOSTS] as MockRepost[],
 };
 
 function pairKey(a: string, b: string): string {
@@ -283,6 +288,76 @@ export async function removeDhog(targetId: string): Promise<void> {
     return;
   }
   return notWired("removeDhog");
+}
+
+/* --- Reposts ---------------------------------------------------------------
+ *
+ * Unlike dhog, a repost is not just a number: it puts a card in somebody's
+ * feed and on their profile, so it has to be stored rather than held
+ * optimistically in the pressing component. That is why these read back — the
+ * button's pressed state comes from the store, not from a local guess, so
+ * undoing still works after a refetch and the banner appears and disappears
+ * with it.
+ *
+ * Entries come back with the post already resolved. Doing the join here rather
+ * than in two components is the point of this layer, and it becomes a single
+ * select with an embedded post the day it is real.
+ * ------------------------------------------------------------------------- */
+
+function resolveReposts(reposts: MockRepost[]): RepostEntry[] {
+  const entries: RepostEntry[] = [];
+  for (const repost of reposts) {
+    const post = store.posts.find((candidate) => candidate.id === repost.postId);
+    // A repost of a deleted post is not a card with a hole in it, it is gone.
+    if (!post || store.deleted.has(post.id)) continue;
+    entries.push({ repost, post });
+  }
+  return entries;
+}
+
+export async function getReposts(): Promise<RepostEntry[]> {
+  if (USE_MOCK_DATA) return mockDelay(resolveReposts(store.reposts));
+  return notWired("getReposts");
+}
+
+/** Everything one person has passed on, for their profile timeline. */
+export async function getRepostsBy(profileId: string): Promise<RepostEntry[]> {
+  if (USE_MOCK_DATA) {
+    return mockDelay(resolveReposts(store.reposts.filter((r) => r.bySlug === profileId)));
+  }
+  return notWired("getRepostsBy");
+}
+
+export async function repost(postId: string): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const already = store.reposts.some((r) => r.postId === postId && r.bySlug === MOCK_USER.slug);
+    if (!already) {
+      store.reposts = [
+        {
+          id: `repost-local-${Date.now()}`,
+          postId,
+          by: MOCK_USER,
+          bySlug: MOCK_USER.slug,
+          postedAt: "just now",
+        },
+        ...store.reposts,
+      ];
+    }
+    await mockDelay(null, 90);
+    return;
+  }
+  return notWired("repost");
+}
+
+export async function unrepost(postId: string): Promise<void> {
+  if (USE_MOCK_DATA) {
+    store.reposts = store.reposts.filter(
+      (r) => !(r.postId === postId && r.bySlug === MOCK_USER.slug),
+    );
+    await mockDelay(null, 90);
+    return;
+  }
+  return notWired("unrepost");
 }
 
 /* --- People and profiles -------------------------------------------------- */

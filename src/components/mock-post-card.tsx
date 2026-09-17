@@ -8,7 +8,14 @@ import { PersonAvatar, PersonName } from "@/components/person-link";
 import { CommentThread } from "@/components/comment-thread";
 import { getComments } from "@/lib/api";
 import { displayDhog } from "@/lib/dhog";
-import { nicheForPost, type MockAuthor, type MockComment, type MockPost } from "@/lib/feed-mock";
+import { displayReposts } from "@/lib/repost";
+import {
+  nicheForPost,
+  type MockAuthor,
+  type MockComment,
+  type MockPost,
+  type MockRepost,
+} from "@/lib/feed-mock";
 import { labelForType, type RealPostType } from "@/lib/feed";
 
 /* ===========================================================================
@@ -30,6 +37,15 @@ import { labelForType, type RealPostType } from "@/lib/feed";
 export type Given = Record<string, boolean>;
 export type Flagged = Record<string, boolean>;
 
+/**
+ * Which posts the viewer has passed on.
+ *
+ * Unlike `given`, this is not a local guess: it is seeded from the store on
+ * load, because a repost is a card sitting in somebody's feed rather than a
+ * number that resets when you look away.
+ */
+export type Reposted = Record<string, boolean>;
+
 const TYPE_BADGE: Record<RealPostType, string> = {
   question: "border-crimson/40 bg-crimson-wash text-crimson-deep",
   "career-story": "border-indigo/30 bg-indigo/8 text-indigo",
@@ -41,16 +57,26 @@ export function PostCard({
   post,
   given,
   flagged,
+  reposted,
+  repostedBy,
   onGive,
   onFlag,
+  onRepost,
   onEdit,
   onDelete,
 }: {
   post: MockPost;
   given: Given;
   flagged: Flagged;
+  reposted: Reposted;
+  /**
+   * Set when this slot is somebody passing the post on rather than writing it.
+   * The card underneath stays the original author's — only the banner changes.
+   */
+  repostedBy?: MockRepost;
   onGive: (id: string) => void;
   onFlag: (id: string) => void;
+  onRepost: (id: string) => void;
   onEdit?: (id: string, content: string) => void;
   onDelete?: (id: string) => void;
 }) {
@@ -76,6 +102,23 @@ export function PostCard({
 
   return (
     <article className="card p-5">
+      {/* Above everything, and visibly not part of the post: this is the only
+          line on the card that is about the reposter rather than the author. */}
+      {repostedBy ? (
+        <p className="text-ink-soft border-line mb-4 flex flex-wrap items-center gap-1.5 border-b pb-3 text-xs font-semibold">
+          <RepostGlyph />
+          {repostedBy.bySlug === user?.slug ? (
+            "You reposted"
+          ) : (
+            <>
+              <PersonName name={repostedBy.by.name} className="font-semibold" />
+              reposted
+            </>
+          )}
+          <span className="text-ink-faint font-medium">· {repostedBy.postedAt}</span>
+        </p>
+      ) : null}
+
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="flex flex-wrap items-center gap-1.5">
           <span
@@ -167,6 +210,15 @@ export function PostCard({
           count={post.comments}
           label={open ? "Hide comments" : "Show comments"}
           aria-expanded={open}
+        />
+
+        <RepostControl
+          id={post.id}
+          name={post.author.name}
+          stored={post.reposts}
+          reposted={Boolean(reposted[post.id])}
+          isOwn={isOwn}
+          onRepost={onRepost}
         />
       </footer>
 
@@ -278,6 +330,79 @@ export function DhogControl({
       size={size}
       live
     />
+  );
+}
+
+/**
+ * Passing a post on.
+ *
+ * The third thing you can do to a post, and deliberately the same shape as the
+ * other two — an emoji and a number — because reposting is not a bigger deal
+ * than thanking somebody, it is just a different one.
+ *
+ * It is a toggle for the same reason dhog is: a repost you cannot withdraw
+ * turns a misfire into somebody else's permanent feed item.
+ *
+ * You cannot repost your own post. The count still shows, because a reader
+ * should be able to see how far something travelled, but the control is inert:
+ * a banner reading "Bishal T. reposted" over Bishal T.'s own card is noise, and
+ * circulation is meant to be other people vouching for you.
+ */
+function RepostControl({
+  id,
+  name,
+  stored,
+  reposted,
+  isOwn,
+  onRepost,
+}: {
+  id: string;
+  name: string;
+  stored: number | undefined;
+  reposted: boolean;
+  isOwn: boolean;
+  onRepost: (id: string) => void;
+}) {
+  const { requireAuth } = useMockAuth();
+  const count = displayReposts(stored, reposted);
+
+  if (isOwn) {
+    return (
+      <ReactionButton
+        onClick={() => {}}
+        emoji="🔁"
+        count={count}
+        label={`${count} ${count === 1 ? "repost" : "reposts"}`}
+        title="You can't repost your own post"
+        disabled
+      />
+    );
+  }
+
+  return (
+    <ReactionButton
+      onClick={() => requireAuth(() => onRepost(id))}
+      pressed={reposted}
+      active={reposted}
+      emoji="🔁"
+      count={count}
+      label={reposted ? `Undo your repost of ${name}'s post` : `Repost ${name}'s post`}
+      live
+    />
+  );
+}
+
+function RepostGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" aria-hidden>
+      <path
+        d="M4 9V7.5A2.5 2.5 0 0 1 6.5 5H17m0 0-3-3m3 3-3 3M20 15v1.5a2.5 2.5 0 0 1-2.5 2.5H7m0 0 3 3m-3-3 3-3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

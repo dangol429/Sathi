@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { FeedNav, type NavView } from "@/components/feed-nav";
-import { PostCard, type Flagged, type Given } from "@/components/mock-post-card";
+import { PostCard, type Flagged, type Given, type Reposted } from "@/components/mock-post-card";
 import { Dropdown } from "@/components/dropdown";
 import { useMockAuth } from "@/components/mock-auth";
 import { PostComposer } from "@/components/post-composer-mock";
@@ -12,12 +12,16 @@ import {
   editPost as apiEditPost,
   getFeedPosts,
   getNiches,
+  getReposts,
   getSathis,
   giveDhog,
   removeDhog,
+  repost as apiRepost,
+  unrepost as apiUnrepost,
 } from "@/lib/api";
 import { useAsync } from "@/lib/api/use-async";
 import { useSathis } from "@/lib/api/use-sathis";
+import { buildTimeline, type RepostEntry } from "@/lib/repost";
 import type { MockNiche, MockPerson, MockPost } from "@/lib/feed-mock";
 import { labelForType, POST_TYPES, type PostType } from "@/lib/feed";
 
@@ -70,6 +74,49 @@ export function FeedShell({
   const [given, setGiven] = useState<Given>({});
   const [flagged, setFlagged] = useState<Flagged>({});
   const [menuOpen, setMenuOpen] = useState(false);
+
+  /*
+   * Reposts are read back rather than guessed at, because pressing the button
+   * puts a card in the feed — the pressed state and the banner have to agree
+   * with the store, not with a local boolean that resets on the next fetch.
+   */
+  const { data: repostEntries, setData: setRepostEntries } = useAsync<RepostEntry[]>(
+    getReposts,
+    [],
+  );
+  const reposted: Reposted = {};
+  for (const entry of repostEntries) {
+    if (entry.repost.bySlug === user?.slug) reposted[entry.post.id] = true;
+  }
+
+  /** Optimistic like dhog, but the entry is what moves, not just a number. */
+  function toggleRepost(id: string) {
+    const post = posts.find((candidate) => candidate.id === id);
+    if (!post || !user) return;
+
+    if (reposted[id]) {
+      setRepostEntries((current) =>
+        current.filter((entry) => !(entry.post.id === id && entry.repost.bySlug === user.slug)),
+      );
+      void apiUnrepost(id);
+      return;
+    }
+
+    setRepostEntries((current) => [
+      {
+        post,
+        repost: {
+          id: `repost-local-${Date.now()}`,
+          postId: id,
+          by: user,
+          bySlug: user.slug,
+          postedAt: "just now",
+        },
+      },
+      ...current,
+    ]);
+    void apiRepost(id);
+  }
 
   /** Move to a new view and keep the URL in step with it. */
   function apply(next: Partial<{ view: NavView; niche: string | null; type: PostType }>) {
@@ -134,7 +181,18 @@ export function FeedShell({
 
   // Trending sorts on the posted count, not the count including your own click,
   // so giving dhog never makes a card jump out from under the cursor.
-  const visible = view === "trending" ? [...filtered].sort((a, b) => b.dhog - a.dhog) : filtered;
+  const ordered = view === "trending" ? [...filtered].sort((a, b) => b.dhog - a.dhog) : filtered;
+
+  /*
+   * Reposts are woven in after filtering, so a reposted question cannot slip
+   * past a "show me opportunities" filter, and a post being passed on takes
+   * the slot rather than appearing twice. Trending re-sorts on the underlying
+   * post, since a repost carries no dhog of its own.
+   */
+  const orderedIds = new Set(ordered.map((post) => post.id));
+  const timeline = buildTimeline(ordered, repostEntries, (post) => orderedIds.has(post.id));
+  const visible =
+    view === "trending" ? [...timeline].sort((a, b) => b.post.dhog - a.post.dhog) : timeline;
 
   const heading = view === "trending" ? "Trending" : "Latest";
   const scope = type === "all" ? null : labelForType(type);
@@ -225,14 +283,17 @@ export function FeedShell({
 
         {visible.length > 0 ? (
           <div className="mt-4 space-y-5">
-            {visible.map((post) => (
+            {visible.map((entry) => (
               <PostCard
-                key={post.id}
-                post={post}
+                key={entry.key}
+                post={entry.post}
+                repostedBy={entry.repost}
                 given={given}
                 flagged={flagged}
+                reposted={reposted}
                 onGive={toggleDhog}
                 onFlag={flag}
+                onRepost={toggleRepost}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
               />
