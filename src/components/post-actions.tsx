@@ -1,50 +1,54 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PopoverPanel, usePopover } from "@/components/popover";
-import { useToast } from "@/components/toast";
+import { MenuItem, PopoverPanel, usePopover } from "@/components/popover";
+import { editWindowRemaining } from "@/lib/edit-window";
 
 /* ---------------------------------------------------------------------------
- * The "…" on a post.
+ * The "…" on a post — the author's menu, and only the author's.
  *
- * Share is always there, on anybody's post. Edit and Delete belong to the
- * author and only for a quarter of an hour after posting — long enough to fix
- * a typo or think better of it, short enough that the thing somebody answered
- * cannot be rewritten underneath them afterwards.
+ * Share used to live here as well, which made this the one menu everybody saw
+ * and left it holding a single item on a stranger's post. Share is now a
+ * control in the footer beside the other things you can do to a post, where
+ * people look for it, so there is nothing left in here for anyone but the
+ * author and the button does not render for anyone else. An overflow menu with
+ * one thing in it was overflow for nothing.
  *
- * The window is checked in the browser against the post's timestamp, which is
+ * Edit and Delete are not gated the same way:
+ *
+ *   Delete   always. Taking your own writing off the site is not something
+ *            that should expire — the alternative is telling someone their
+ *            words are stuck there forever because they thought better of it
+ *            sixteen minutes too late.
+ *   Edit     for a quarter of an hour. Long enough to fix a typo, short
+ *            enough that the thing somebody answered cannot be rewritten
+ *            underneath them afterwards. That asymmetry is the point: a
+ *            deletion is visibly gone, a silent edit is not.
+ *
+ * The window lives in lib/edit-window.ts, shared with the same menu on a Kura
+ * message. It is checked in the browser against the post's timestamp, which is
  * a mock-phase shortcut: the real check is one comparison in an RLS policy
  * once posts carry a server timestamp. Nothing here should be mistaken for
  * enforcement.
  * ------------------------------------------------------------------------- */
 
-export const EDIT_WINDOW_MS = 15 * 60 * 1000;
-
-export function editWindowRemaining(createdAt: number | undefined, now: number): number {
-  if (!createdAt) return 0;
-  return Math.max(0, createdAt + EDIT_WINDOW_MS - now);
-}
-
 export function PostActions({
-  postId,
   isOwn,
   createdAt,
   onEdit,
   onDelete,
 }: {
-  postId: string;
   isOwn: boolean;
   createdAt?: number;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const { open, setOpen, close, anchorRef, triggerRef, panelId } = usePopover();
-  const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
   const [remaining, setRemaining] = useState(() => editWindowRemaining(createdAt, Date.now()));
 
-  // Re-check when the window is due to close, so the actions disappear on
-  // their own rather than lingering until the next unrelated render.
+  // Re-check when the window is due to close, so Edit disappears on its own
+  // rather than lingering until the next unrelated render.
   useEffect(() => {
     if (!isOwn || remaining <= 0) return;
     const id = setTimeout(
@@ -55,29 +59,11 @@ export function PostActions({
   }, [isOwn, createdAt, remaining]);
 
   const canEdit = isOwn && remaining > 0;
+  const canDelete = isOwn;
 
-  async function share() {
-    const url = `${window.location.origin}/feed#${postId}`;
-    close(true);
-
-    // The native sheet where there is one — that is what people expect on a
-    // phone — and the clipboard everywhere else.
-    if (navigator.share) {
-      try {
-        await navigator.share({ url, title: "A post on Sathi" });
-        return;
-      } catch {
-        // Dismissed, or not permitted. Fall through to the clipboard.
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      toast("Link copied");
-    } catch {
-      toast("Couldn't copy the link", "info");
-    }
-  }
+  // Nothing to offer on somebody else's post any more, so no button either.
+  // Hooks run first, above, because they cannot be called conditionally.
+  if (!isOwn) return null;
 
   return (
     <div className="relative" ref={anchorRef}>
@@ -100,78 +86,41 @@ export function PostActions({
       {open ? (
         <PopoverPanel id={panelId} align="right" className="w-44">
           <div role="menu" aria-label="Post actions">
-            <MenuItem onClick={share}>
-              <ShareGlyph />
-              Share
-            </MenuItem>
-
             {canEdit ? (
-              <>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  onEdit();
+                }}
+              >
+                <PencilGlyph />
+                Edit
+              </MenuItem>
+            ) : null}
+
+            {canDelete ? (
+              confirming ? (
                 <MenuItem
+                  tone="danger"
                   onClick={() => {
                     close();
-                    onEdit();
+                    onDelete();
                   }}
                 >
-                  <PencilGlyph />
-                  Edit
+                  <TrashGlyph />
+                  Really delete?
                 </MenuItem>
-
-                {confirming ? (
-                  <MenuItem
-                    tone="danger"
-                    onClick={() => {
-                      close();
-                      onDelete();
-                    }}
-                  >
-                    <TrashGlyph />
-                    Really delete?
-                  </MenuItem>
-                ) : (
-                  <MenuItem tone="danger" onClick={() => setConfirming(true)}>
-                    <TrashGlyph />
-                    Delete
-                  </MenuItem>
-                )}
-
-                <p className="text-ink-faint px-2.5 pt-1.5 pb-1 text-xs">
-                  {minutesLeft(remaining)} left to change it
-                </p>
-              </>
+              ) : (
+                <MenuItem tone="danger" onClick={() => setConfirming(true)}>
+                  <TrashGlyph />
+                  Delete
+                </MenuItem>
+              )
             ) : null}
           </div>
         </PopoverPanel>
       ) : null}
     </div>
-  );
-}
-
-function minutesLeft(ms: number): string {
-  const minutes = Math.ceil(ms / 60000);
-  return minutes <= 1 ? "under a minute" : `${minutes} minutes`;
-}
-
-function MenuItem({
-  onClick,
-  tone = "normal",
-  children,
-}: {
-  onClick: () => void;
-  tone?: "normal" | "danger";
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className={`hover:bg-elevated flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm font-semibold transition-colors ${
-        tone === "danger" ? "text-crimson" : "text-ink-soft"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -181,26 +130,6 @@ function MoreGlyph() {
       <circle cx="5" cy="12" r="1.8" />
       <circle cx="12" cy="12" r="1.8" />
       <circle cx="19" cy="12" r="1.8" />
-    </svg>
-  );
-}
-
-function ShareGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" aria-hidden>
-      <path
-        d="M12 15V4m0 0L8.5 7.5M12 4l3.5 3.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }

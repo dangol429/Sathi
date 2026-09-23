@@ -51,6 +51,13 @@ import {
   type MockUser,
   type ProfileEntry,
 } from "@/lib/feed-mock";
+import {
+  FOUNDING_COHORT_SIZE,
+  MOCK_ACCOUNTS,
+  MOCK_APPLICATIONS,
+  type MockAccount,
+  type MockApplication,
+} from "@/lib/moderation";
 import type { RepostEntry } from "@/lib/repost";
 
 /* ---------------------------------------------------------------------------
@@ -81,6 +88,12 @@ const store = {
   deleted: new Set<string>(),
   /** Reposts, seeded and then added to as the viewer passes things on. */
   reposts: [...MOCK_REPOSTS] as MockRepost[],
+  /* Moderation state. Copied per row rather than shallow-copied as a list,
+     because approving edits a row in place and must not reach the fixture —
+     a queue that stayed approved after a reload would be lying about what the
+     database holds. */
+  applications: MOCK_APPLICATIONS.map((a) => ({ ...a })) as MockApplication[],
+  accounts: MOCK_ACCOUNTS.map((a) => ({ ...a })) as MockAccount[],
 };
 
 function pairKey(a: string, b: string): string {
@@ -559,6 +572,7 @@ export async function sendMessage(
       fromMe: true,
       content,
       postedAt: "just now",
+      createdAt: Date.now(),
     };
     conversation.messages = [...conversation.messages, message];
     return mockDelay(message, 90);
@@ -575,6 +589,50 @@ export async function markConversationRead(conversationId: string): Promise<void
     return;
   }
   return notWired("markConversationRead");
+}
+
+/**
+ * Changes a message you sent, within its window.
+ *
+ * The window itself is not re-checked here — the client already hid the
+ * control once it closed, and the real enforcement is an RLS policy, not this
+ * function. This only has to agree with the client about which message it is.
+ */
+export async function editMessage(
+  conversationId: string,
+  messageId: string,
+  content: string,
+): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const conversation = store.conversations.find((c) => c.id === conversationId);
+    if (conversation) {
+      conversation.messages = conversation.messages.map((message) =>
+        message.id === messageId ? { ...message, content, editedAt: true } : message,
+      );
+    }
+    await mockDelay(null, 90);
+    return;
+  }
+  return notWired("editMessage");
+}
+
+/**
+ * Removes a message you sent, entirely — matching how deleting a post works
+ * rather than leaving a "this message was deleted" placeholder behind. Once
+ * gone, whatever was last in the thread becomes the new preview in the
+ * conversation list on its own, since that preview always reads the last
+ * remaining message rather than a stored pointer.
+ */
+export async function deleteMessage(conversationId: string, messageId: string): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const conversation = store.conversations.find((c) => c.id === conversationId);
+    if (conversation) {
+      conversation.messages = conversation.messages.filter((message) => message.id !== messageId);
+    }
+    await mockDelay(null, 90);
+    return;
+  }
+  return notWired("deleteMessage");
 }
 
 /* --- Notifications --------------------------------------------------------- */
@@ -614,4 +672,93 @@ export async function getNiches(): Promise<MockNiche[]> {
 export async function getNiche(slug: string | undefined): Promise<MockNiche | null> {
   if (USE_MOCK_DATA) return mockDelay(findMockNiche(slug), 60);
   return notWired("getNiche");
+}
+
+/* --- Moderation ------------------------------------------------------------
+ *
+ * Read by the /darbar console and by nothing else. These go through this file
+ * like every other read and write, so the console switches to real data on the
+ * same day the rest of the app does rather than needing its own migration.
+ *
+ * The real implementations are already written, in SQL: approve_professional
+ * and reject_professional are SECURITY DEFINER functions that re-check
+ * is_admin() in the database. So the notWired() branches below become one rpc
+ * call each — see app/actions/admin.ts, which already makes exactly those two
+ * calls for the Supabase-backed review page.
+ * ------------------------------------------------------------------------- */
+
+export async function getApplications(): Promise<MockApplication[]> {
+  if (USE_MOCK_DATA) return mockDelay([...store.applications]);
+  return notWired("getApplications");
+}
+
+export async function getAccounts(): Promise<MockAccount[]> {
+  if (USE_MOCK_DATA) return mockDelay([...store.accounts]);
+  return notWired("getAccounts");
+}
+
+/**
+ * Approving does three things at once, and they have to stay together: the
+ * application is marked verified, the person's account becomes a professional,
+ * and — while founding slots remain — they are marked a founding member. The
+ * SQL function does all three in one transaction for the same reason.
+ */
+export async function approveApplication(id: string): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const application = store.applications.find((a) => a.id === id);
+    if (application) {
+      const verified = store.applications.filter((a) => a.status === "verified").length;
+      application.status = "verified";
+      application.reviewedAt = new Date().toISOString();
+      application.foundingMember = verified < FOUNDING_COHORT_SIZE;
+      application.reviewNote = undefined;
+
+      const account = store.accounts.find((a) => a.email === application.email);
+      if (account) {
+        account.role = "professional";
+        account.review = "verified";
+      }
+    }
+    await mockDelay(null, 140);
+    return;
+  }
+  return notWired("approveApplication");
+}
+
+/**
+ * The note is not optional in spirit: a rejection with no reason is shown to
+ * the person on /pending as a blank, which is worse than a plain no. The UI
+ * requires one; this keeps whatever it is given.
+ */
+export async function rejectApplication(id: string, note: string): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const application = store.applications.find((a) => a.id === id);
+    if (application) {
+      application.status = "rejected";
+      application.reviewedAt = new Date().toISOString();
+      application.reviewNote = note.trim() || undefined;
+      application.foundingMember = false;
+
+      const account = store.accounts.find((a) => a.email === application.email);
+      if (account) account.review = "rejected";
+    }
+    await mockDelay(null, 140);
+    return;
+  }
+  return notWired("rejectApplication");
+}
+
+/**
+ * Suspending is reversible and deliberately does not delete anything: the
+ * account stays, their posts stay, and the only change is that they cannot
+ * sign in. Removing someone's writing is a separate decision, made per post.
+ */
+export async function setAccountSuspended(id: string, suspended: boolean): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const account = store.accounts.find((a) => a.id === id);
+    if (account) account.suspended = suspended;
+    await mockDelay(null, 120);
+    return;
+  }
+  return notWired("setAccountSuspended");
 }

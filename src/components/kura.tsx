@@ -2,12 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { VerifiedStamp } from "@/components/brand";
+import { KuraBackdrop } from "@/components/kura-backdrop";
+import { MessageActions } from "@/components/message-actions";
 import { useMockAuth } from "@/components/mock-auth";
 import { PersonAvatar, PersonName } from "@/components/person-link";
-import { getConversations, markConversationRead, sendMessage as apiSendMessage } from "@/lib/api";
+import {
+  deleteMessage as apiDeleteMessage,
+  editMessage as apiEditMessage,
+  getConversations,
+  markConversationRead,
+  sendMessage as apiSendMessage,
+} from "@/lib/api";
 import { useAsync } from "@/lib/api/use-async";
 import { useSathis } from "@/lib/api/use-sathis";
-import type { MockConversation } from "@/lib/feed-mock";
+import { editWindowRemaining } from "@/lib/edit-window";
+import type { MockConversation, MockMessage } from "@/lib/feed-mock";
 
 /* ===========================================================================
  * Kura — कुरा, "talk". Messages, in the corner.
@@ -40,6 +49,19 @@ import type { MockConversation } from "@/lib/feed-mock";
  * a subscription and an insert.
  *
  * Every panel sits on --z-chat-widget: under modals, over everything else.
+ *
+ * A message you sent carries the same edit/delete rights a post does, gated
+ * the same way: Delete always, Edit only for fifteen minutes
+ * (lib/edit-window.ts, shared with PostActions). Long enough to fix a typo,
+ * short enough that a reply already sent in answer to it cannot be rewritten
+ * underneath — while taking your own words back stays available, because that
+ * is not something that should expire.
+ *
+ * A time sits beside every message, always, rather than only on hover or
+ * tucked inside the bubble: on the side nearer the panel's centre, so it never
+ * crowds the panel's outer edge. Only your own messages are clickable — there
+ * is nothing to offer on one you did not send, so those stay plain text with a
+ * time beside them and nothing more.
  * ========================================================================= */
 
 type Tab = "chats" | "requests";
@@ -50,14 +72,39 @@ const MAX_OPEN = 3;
 /** One height for every panel, so their bottoms line up along the screen. */
 const PANEL_H = "h-[min(calc(100dvh-6rem),max(50dvh,28rem))]";
 
+/**
+ * Expanded: twice the width and twice the height.
+ *
+ * The height keeps the same `min(calc(100dvh-6rem), …)` clamp, so "twice as
+ * tall" means twice as tall until it would run off the top of the screen and
+ * then simply as tall as the screen allows. A panel that grew past the
+ * viewport would put its own composer out of reach, which is a strange reward
+ * for pressing Expand.
+ */
+const PANEL_W = "w-[19rem]";
+const PANEL_W_BIG = "w-[38rem]";
+const PANEL_H_BIG = "h-[min(calc(100dvh-6rem),max(100dvh,56rem))]";
+
+/** The list is wider than a thread to begin with, and doubles the same way. */
+const LIST_W = "w-[21rem]";
+const LIST_W_BIG = "w-[42rem]";
+
 export function Kura() {
   const { user, signedIn } = useMockAuth();
   const { sathiIds } = useSathis(user?.slug);
 
   const [listOpen, setListOpen] = useState(false);
+  /** Kept across closing and reopening the list — unlike a thread, there is
+      only one of it, so a size you chose is a preference rather than state
+      belonging to some particular conversation. */
+  const [listExpanded, setListExpanded] = useState(false);
   const [tab, setTab] = useState<Tab>("chats");
   /** Conversation ids with a panel open. Most recently opened last. */
   const [openIds, setOpenIds] = useState<string[]>([]);
+  /** Open, but folded down to their header bar. */
+  const [collapsedIds, setCollapsedIds] = useState<string[]>([]);
+  /** Open, and drawn at twice the size. */
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
 
   const {
     data: conversations,
@@ -89,20 +136,72 @@ export function Kura() {
 
   function closeThread(id: string) {
     setOpenIds((current) => current.filter((openId) => openId !== id));
+    // Leave nothing behind: reopening the thread later should not restore the
+    // folded-away or enlarged state it happened to be in when it was closed.
+    setCollapsedIds((current) => current.filter((openId) => openId !== id));
+    setExpandedIds((current) => current.filter((openId) => openId !== id));
+  }
+
+  function toggleCollapsed(id: string) {
+    setCollapsedIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+    );
+  }
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((current) => {
+      if (current.includes(id)) return current.filter((x) => x !== id);
+      // Unfold on the way out: expanding a panel you cannot see is a no-op the
+      // user would have to undo twice.
+      setCollapsedIds((folded) => folded.filter((x) => x !== id));
+      return [...current, id];
+    });
   }
 
   async function send(id: string, content: string) {
-    const optimistic = {
+    const optimistic: MockMessage = {
       id: `local-${Date.now()}`,
-      fromMe: true as const,
+      fromMe: true,
       content,
       postedAt: "just now",
+      createdAt: Date.now(),
+      // Cleared the instant reload() below replaces this with the store's own
+      // copy — see MockMessage.sending for why editing/deleting has to wait
+      // for that to happen rather than trusting this optimistic stand-in.
+      sending: true,
     };
     setConversations((current) =>
       current.map((c) => (c.id === id ? { ...c, messages: [...c.messages, optimistic] } : c)),
     );
     await apiSendMessage(id, content);
     reload();
+  }
+
+  function editMessageIn(conversationId: string, messageId: string, content: string) {
+    setConversations((current) =>
+      current.map((c) =>
+        c.id !== conversationId
+          ? c
+          : {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === messageId ? { ...m, content, editedAt: true } : m,
+              ),
+            },
+      ),
+    );
+    void apiEditMessage(conversationId, messageId, content);
+  }
+
+  function deleteMessageIn(conversationId: string, messageId: string) {
+    setConversations((current) =>
+      current.map((c) =>
+        c.id !== conversationId
+          ? c
+          : { ...c, messages: c.messages.filter((m) => m.id !== messageId) },
+      ),
+    );
+    void apiDeleteMessage(conversationId, messageId).then(reload);
   }
 
   return (
@@ -114,7 +213,8 @@ export function Kura() {
     <div className="z-chat-widget fixed right-4 bottom-0 flex max-w-[calc(100vw-2rem)] flex-row-reverse items-end gap-3 sm:right-6">
       {listOpen ? (
         <ListPanel
-          className={PANEL_H}
+          expanded={listExpanded}
+          onToggleExpand={() => setListExpanded((current) => !current)}
           tab={tab}
           onTab={setTab}
           chats={chats}
@@ -147,11 +247,17 @@ export function Kura() {
       {[...open].reverse().map((conversation, index) => (
         <ConversationPanel
           key={conversation.id}
-          className={`${PANEL_H} ${index === 0 ? "flex" : index === 1 ? "hidden md:flex" : "hidden xl:flex"}`}
+          className={index === 0 ? "flex" : index === 1 ? "hidden md:flex" : "hidden xl:flex"}
           conversation={conversation}
           isSathi={isSathi(conversation.personSlug)}
+          collapsed={collapsedIds.includes(conversation.id)}
+          expanded={expandedIds.includes(conversation.id)}
+          onToggleCollapse={() => toggleCollapsed(conversation.id)}
+          onToggleExpand={() => toggleExpanded(conversation.id)}
           onClose={() => closeThread(conversation.id)}
           onSend={(text) => send(conversation.id, text)}
+          onEditMessage={(messageId, content) => editMessageIn(conversation.id, messageId, content)}
+          onDeleteMessage={(messageId) => deleteMessageIn(conversation.id, messageId)}
         />
       ))}
     </div>
@@ -161,7 +267,8 @@ export function Kura() {
 /* --- The list ------------------------------------------------------------ */
 
 function ListPanel({
-  className,
+  expanded,
+  onToggleExpand,
   tab,
   onTab,
   chats,
@@ -171,7 +278,8 @@ function ListPanel({
   onOpen,
   onClose,
 }: {
-  className: string;
+  expanded: boolean;
+  onToggleExpand: () => void;
   tab: Tab;
   onTab: (tab: Tab) => void;
   chats: MockConversation[];
@@ -185,9 +293,24 @@ function ListPanel({
 
   return (
     <div
-      className={`card mb-0 flex w-[21rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-b-none ${className}`}
+      className={`card mb-0 flex max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-b-none ${
+        expanded ? LIST_W_BIG : LIST_W
+      } ${expanded ? PANEL_H_BIG : PANEL_H}`}
     >
-      <PanelHeader onClose={onClose} closeLabel="Close Kura">
+      {/* The list has one collapsed state, not two: folding it down and
+          closing it both leave the same bar sitting on the floor, so the
+          chevron and the cross are wired to the same thing rather than
+          pretending to be different. */}
+      <PanelHeader
+        collapsed={false}
+        onToggleCollapse={onClose}
+        collapseLabel="Hide Kura"
+        expanded={expanded}
+        onToggleExpand={onToggleExpand}
+        expandLabel={expanded ? "Shrink Kura" : "Expand Kura"}
+        onClose={onClose}
+        closeLabel="Close Kura"
+      >
         <KuraGlyph />
         <span className="font-display font-semibold">Kura</span>
       </PanelHeader>
@@ -310,22 +433,39 @@ function ConversationPanel({
   className,
   conversation,
   isSathi,
+  collapsed,
+  expanded,
+  onToggleCollapse,
+  onToggleExpand,
   onClose,
   onSend,
+  onEditMessage,
+  onDeleteMessage,
 }: {
+  /** Only which screen sizes this panel appears on. Its own size is its own. */
   className: string;
   conversation: MockConversation;
   isSathi: boolean;
+  collapsed: boolean;
+  expanded: boolean;
+  onToggleCollapse: () => void;
+  onToggleExpand: () => void;
   onClose: () => void;
   onSend: (text: string) => void;
+  onEditMessage: (messageId: string, content: string) => void;
+  onDeleteMessage: (messageId: string) => void;
 }) {
   const [text, setText] = useState("");
+  /** At most one message editable at a time — starting a second discards the first. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Follow the conversation down as it grows, the way every messenger does.
+  // `collapsed` is in here too: unfolding a panel should land you at the
+  // bottom of the thread, not wherever it happened to be when you folded it.
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [conversation.messages.length]);
+  }, [conversation.messages.length, collapsed]);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -339,9 +479,21 @@ function ConversationPanel({
 
   return (
     <div
-      className={`card mb-0 w-[19rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-b-none ${className}`}
+      className={`card mb-0 flex-col overflow-hidden rounded-b-none max-w-[calc(100vw-2rem)] ${
+        expanded ? PANEL_W_BIG : PANEL_W
+      } ${collapsed ? "" : expanded ? PANEL_H_BIG : PANEL_H} ${className}`}
     >
       <PanelHeader
+        collapsed={collapsed}
+        onToggleCollapse={onToggleCollapse}
+        collapseLabel={
+          collapsed
+            ? `Open your conversation with ${conversation.person.name}`
+            : `Hide your conversation with ${conversation.person.name}`
+        }
+        expanded={expanded}
+        onToggleExpand={onToggleExpand}
+        expandLabel={expanded ? "Shrink this conversation" : "Expand this conversation"}
         onClose={onClose}
         closeLabel={`Close your conversation with ${conversation.person.name}`}
       >
@@ -352,77 +504,348 @@ function ConversationPanel({
         {conversation.person.verified ? <VerifiedStamp size={12} /> : null}
       </PanelHeader>
 
-      {!isSathi ? (
-        <p className="text-ink-faint border-line shrink-0 border-b px-3 py-1.5 text-[0.7rem]">
-          Not your Sathi yet — this sits in Requests.
-        </p>
-      ) : null}
+      {/* Folded down to the bar. The thread is still open and still in the
+          dock — nothing about it is unmounted, so a half-typed message and the
+          scroll position both survive being folded away. */}
+      {collapsed ? null : (
+        <>
+          {!isSathi ? (
+            <p className="text-ink-faint border-line shrink-0 border-b px-3 py-1.5 text-[0.7rem]">
+              Not your Sathi yet — this sits in Requests.
+            </p>
+          ) : null}
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-        {conversation.messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.fromMe ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                message.fromMe
-                  ? "bg-crimson-wash text-ink border-crimson/30 rounded-br-sm border"
-                  : "bg-elevated border-line-soft rounded-bl-sm border"
-              }`}
-            >
-              <p className="prose-post">{message.content}</p>
-              <p className="text-ink-faint mt-1 text-[0.65rem]">{message.postedAt}</p>
+          {/*
+           * Two boxes, not one. The outer box is the positioning context and
+           * holds the wallpaper; the scroller is a separate absolute layer
+           * inside it. If the backdrop lived in the scroller it would scroll
+           * away with the messages after one screenful — the wallpaper has to
+           * stay still while the conversation moves over it.
+           *
+           * The scroller comes after the backdrop in the DOM and so paints on
+           * top of it without either needing a z-index. The global scale is
+           * for things that stack across the app; this is two siblings in one
+           * panel, and document order is enough.
+           */}
+          <div className="relative min-h-0 flex-1">
+            <KuraBackdrop />
+
+            <div className="absolute inset-0 space-y-2 overflow-y-auto p-3">
+              {conversation.messages.map((message) => (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  editing={editingId === message.id}
+                  onStartEdit={() => setEditingId(message.id)}
+                  onCancelEdit={() => setEditingId(null)}
+                  onSave={(content) => {
+                    onEditMessage(message.id, content);
+                    setEditingId(null);
+                  }}
+                  onDelete={() => onDeleteMessage(message.id)}
+                />
+              ))}
+              <div ref={endRef} />
             </div>
           </div>
-        ))}
-        <div ref={endRef} />
+
+          <form
+            onSubmit={submit}
+            className="border-line flex shrink-0 items-end gap-2 border-t p-2.5"
+          >
+            <input
+              className="field field-search rounded-full pl-3.5"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder={`Message ${first}…`}
+              aria-label={`Message ${conversation.person.name}`}
+            />
+            <button
+              type="submit"
+              disabled={text.trim().length === 0}
+              aria-label={`Send to ${conversation.person.name}`}
+              className="btn btn-primary btn-sm shrink-0 rounded-full px-3"
+            >
+              <SendGlyph />
+            </button>
+          </form>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* --- One message ----------------------------------------------------------
+ *
+ * Three states: plain (the common case), editing (an inline form replacing
+ * the bubble's content, in place), and — only for your own messages, only
+ * inside the window — clickable, opening MessageActions.
+ *
+ * The time sits in its own span OUTSIDE the bubble rather than inside it, in
+ * a small flex cluster with the bubble. `flex-row-reverse` on your own
+ * (right-aligned) messages puts that span before the bubble in the DOM but
+ * after it visually — i.e. to its LEFT — while a received message keeps the
+ * natural order and the time lands to the bubble's right. Either way the time
+ * ends up on the side nearer the panel's centre, never against the panel's
+ * outer edge where a narrow 19rem panel would make it feel cramped.
+ * ------------------------------------------------------------------------- */
+
+function MessageRow({
+  message,
+  editing,
+  onStartEdit,
+  onCancelEdit,
+  onSave,
+  onDelete,
+}: {
+  message: MockMessage;
+  editing: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSave: (content: string) => void;
+  onDelete: () => void;
+}) {
+  const [draft, setDraft] = useState(message.content);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [remaining, setRemaining] = useState(() =>
+    editWindowRemaining(message.createdAt, Date.now()),
+  );
+
+  // Reset the draft whenever editing starts fresh, rather than carrying
+  // forward whatever was left over from a previous, cancelled attempt.
+  useEffect(() => {
+    if (editing) setDraft(message.content);
+  }, [editing, message.content]);
+
+  // Re-check right when the window is due to close, so Edit drops out of the
+  // menu on its own rather than lingering until some unrelated render — the
+  // same self-correcting timer PostActions uses for posts.
+  useEffect(() => {
+    if (!message.fromMe || remaining <= 0) return;
+    const id = setTimeout(
+      () => setRemaining(editWindowRemaining(message.createdAt, Date.now())),
+      remaining,
+    );
+    return () => clearTimeout(id);
+  }, [message.fromMe, message.createdAt, remaining]);
+
+  // Not yet confirmed by the store — see MockMessage.sending. Acting on it now
+  // could race with the reload that follows a send and bring it back.
+  const settled = !message.sending;
+  /* Your own settled message always has a menu, because Delete never expires.
+     Only Edit inside it is windowed. */
+  const canOpenMenu = message.fromMe && settled;
+  const canEdit = canOpenMenu && remaining > 0;
+
+  if (editing) {
+    return (
+      <div className="flex justify-end">
+        <div className="border-crimson/30 bg-crimson-wash w-[85%] rounded-2xl rounded-br-sm border px-3 py-2">
+          <textarea
+            className="field min-h-14 w-full resize-y bg-transparent px-0 py-0 text-sm leading-relaxed"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            aria-label="Edit your message"
+            autoFocus
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={draft.trim().length === 0}
+              onClick={() => onSave(draft.trim())}
+              className="btn btn-primary btn-sm"
+            >
+              Save
+            </button>
+            <button type="button" onClick={onCancelEdit} className="btn btn-ghost btn-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex ${message.fromMe ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`flex max-w-[85%] items-end gap-1.5 ${message.fromMe ? "flex-row-reverse" : ""}`}
+      >
+        <div
+          ref={bubbleRef}
+          {...(canOpenMenu
+            ? {
+                role: "button" as const,
+                tabIndex: 0,
+                onClick: () => setMenuOpen((current) => !current),
+                onKeyDown: (event: React.KeyboardEvent) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setMenuOpen((current) => !current);
+                  }
+                },
+                "aria-haspopup": "menu" as const,
+                "aria-expanded": menuOpen,
+                "aria-label": "Message actions",
+              }
+            : {})}
+          className={`min-w-0 rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+            message.fromMe
+              ? "bg-crimson-wash text-ink border-crimson/30 rounded-br-sm border"
+              : "bg-elevated border-line-soft rounded-bl-sm border"
+          } ${canOpenMenu ? "cursor-pointer transition-opacity hover:opacity-90" : ""}`}
+        >
+          <p className="prose-post">{message.content}</p>
+        </div>
+
+        <span className="text-ink-faint shrink-0 pb-1 text-[0.65rem] whitespace-nowrap">
+          {message.postedAt}
+          {message.editedAt ? " · edited" : null}
+        </span>
       </div>
 
-      <form onSubmit={submit} className="border-line flex shrink-0 items-end gap-2 border-t p-2.5">
-        <input
-          className="field field-search rounded-full pl-3.5"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={`Message ${first}…`}
-          aria-label={`Message ${conversation.person.name}`}
+      {menuOpen ? (
+        <MessageActions
+          anchorRef={bubbleRef}
+          canEdit={canEdit}
+          onClose={(returnFocus) => {
+            setMenuOpen(false);
+            if (returnFocus) bubbleRef.current?.focus();
+          }}
+          onEdit={onStartEdit}
+          onDelete={onDelete}
         />
-        <button
-          type="submit"
-          disabled={text.trim().length === 0}
-          aria-label={`Send to ${conversation.person.name}`}
-          className="btn btn-primary btn-sm shrink-0 rounded-full px-3"
-        >
-          <SendGlyph />
-        </button>
-      </form>
+      ) : null}
     </div>
   );
 }
 
 /* --- Pieces -------------------------------------------------------------- */
 
+/**
+ * The bar across the top of every panel, and the only place a panel is
+ * operated from.
+ *
+ * Three different things can happen up here and they are deliberately not the
+ * same thing:
+ *
+ *   collapse   fold the panel down to this bar, keeping the thread open. The
+ *              conversation is still there, you are just not looking at it.
+ *   expand     make the panel twice the size, for a thread you are actually
+ *              reading rather than glancing at.
+ *   close      take the thread out of the dock entirely.
+ *
+ * The bar itself collapses on click, which is how every desktop messenger has
+ * worked for fifteen years and the thing people try first. It is a div rather
+ * than a button because it contains a link (the person's name) and two
+ * buttons, and interactive elements do not nest — so the handler ignores any
+ * click that started on a control of its own and lets that control act. The
+ * chevron is there so the same thing is reachable by keyboard and announced
+ * properly, rather than being a gesture only a mouse can find.
+ */
 function PanelHeader({
   children,
+  collapsed,
+  onToggleCollapse,
+  collapseLabel,
+  expanded,
+  onToggleExpand,
+  expandLabel,
   onClose,
   closeLabel,
 }: {
   children: React.ReactNode;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  collapseLabel: string;
+  /** Omitted by the list panel, which has nothing to enlarge. */
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  expandLabel?: string;
   onClose: () => void;
   closeLabel: string;
 }) {
   return (
-    <div className="border-line flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
+    <div
+      onClick={(event) => {
+        // A click that began on the name link or one of the buttons belongs to
+        // that control, not to the bar.
+        if ((event.target as HTMLElement).closest("a,button")) return;
+        onToggleCollapse();
+      }}
+      className={`border-line flex shrink-0 cursor-pointer items-center gap-2 border-b px-3 py-2.5 ${
+        collapsed ? "border-b-transparent" : ""
+      }`}
+    >
       {children}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={closeLabel}
-        className="hover:bg-elevated text-ink-faint hover:text-ink ml-auto shrink-0 rounded-full p-1 transition-colors"
-      >
-        <CloseGlyph />
-      </button>
+
+      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-label={collapseLabel}
+          aria-expanded={!collapsed}
+          title={collapseLabel}
+          className="hover:bg-elevated text-ink-faint hover:text-ink rounded-full p-1 transition-colors"
+        >
+          <ChevronGlyph
+            className={`h-4 w-4 transition-transform ${collapsed ? "" : "rotate-180"}`}
+          />
+        </button>
+
+        {onToggleExpand ? (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            aria-label={expandLabel}
+            aria-pressed={expanded}
+            title={expandLabel}
+            className="hover:bg-elevated text-ink-faint hover:text-ink rounded-full p-1 transition-colors"
+          >
+            {expanded ? <ShrinkGlyph /> : <ExpandGlyph />}
+          </button>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={closeLabel}
+          title={closeLabel}
+          className="hover:bg-elevated text-ink-faint hover:text-ink rounded-full p-1 transition-colors"
+        >
+          <CloseGlyph />
+        </button>
+      </div>
     </div>
+  );
+}
+
+function ExpandGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" aria-hidden>
+      <path
+        d="M14 4h6m0 0v6m0-6-7 7M10 20H4m0 0v-6m0 6 7-7"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ShrinkGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" aria-hidden>
+      <path
+        d="M20 4l-7 7m0 0h6m-6 0V5M4 20l7-7m0 0H5m6 0v6"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

@@ -676,6 +676,22 @@ export type MockMessage = {
   fromMe: boolean;
   content: string;
   postedAt: string;
+  /**
+   * Epoch milliseconds, set only for messages sent in this session — the same
+   * shortcut MockPost.createdAt uses. Seeded fixtures deliberately have none,
+   * so their edit window reads as already closed rather than as newly opened.
+   */
+  createdAt?: number;
+  /** Set once a message has been changed within its window. */
+  editedAt?: boolean;
+  /**
+   * True for the moment between an optimistic send and the reload that
+   * follows it, when the message on screen is a client-only guess rather than
+   * the store's own copy. Editing or deleting it in that window could race
+   * with the reload and have it reappear, so it stays non-interactive until
+   * settled.
+   */
+  sending?: boolean;
 };
 
 export type MockConversation = {
@@ -724,6 +740,10 @@ export const MOCK_CONVERSATIONS: MockConversation[] = [
         fromMe: true,
         content: "Nice! Let me know how it goes.",
         postedAt: "2h ago",
+        // Demonstrates the "edited" tag on a message whose window has already
+        // closed — both states are visible at once without anybody having to
+        // click anything first.
+        editedAt: true,
       },
     ],
   },

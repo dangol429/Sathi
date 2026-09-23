@@ -6,9 +6,11 @@ import { useMockAuth } from "@/components/mock-auth";
 import { PostActions } from "@/components/post-actions";
 import { PersonAvatar, PersonName } from "@/components/person-link";
 import { CommentThread } from "@/components/comment-thread";
+import { useToast } from "@/components/toast";
 import { getComments } from "@/lib/api";
 import { displayDhog } from "@/lib/dhog";
 import { displayReposts } from "@/lib/repost";
+import { sharePostLink } from "@/lib/share-post";
 import {
   nicheForPost,
   type MockAuthor,
@@ -133,15 +135,22 @@ export function PostCard({
           {post.editedAt ? <span className="ml-1">· edited</span> : null}
         </span>
         {/* Up here, away from the dhog control and looking nothing like it:
-            this is a note to a moderator, not the other half of a vote. */}
-        <FlagButton
-          id={post.id}
-          label={`this post by ${post.author.name}`}
-          flagged={Boolean(flagged[post.id])}
-          onFlag={onFlag}
-        />
+            this is a note to a moderator, not the other half of a vote.
+
+            Never on your own post. Reporting yourself to a moderator is not a
+            thing anyone means to do, and unlike the repost control there is
+            nothing informational to leave behind in its place — a flag has no
+            count and no public state — so it simply does not render. If you
+            want your own post gone, that is Delete in the "…" menu. */}
+        {!isOwn ? (
+          <FlagButton
+            id={post.id}
+            label={`this post by ${post.author.name}`}
+            flagged={Boolean(flagged[post.id])}
+            onFlag={onFlag}
+          />
+        ) : null}
         <PostActions
-          postId={post.id}
           isOwn={isOwn}
           createdAt={post.createdAt}
           onEdit={() => {
@@ -220,6 +229,8 @@ export function PostCard({
           isOwn={isOwn}
           onRepost={onRepost}
         />
+
+        <ShareControl id={post.id} name={post.author.name} />
       </footer>
 
       {open ? (
@@ -370,7 +381,7 @@ function RepostControl({
     return (
       <ReactionButton
         onClick={() => {}}
-        emoji="🔁"
+        icon={<RepostGlyph className="h-4 w-4" />}
         count={count}
         label={`${count} ${count === 1 ? "repost" : "reposts"}`}
         title="You can't repost your own post"
@@ -384,7 +395,7 @@ function RepostControl({
       onClick={() => requireAuth(() => onRepost(id))}
       pressed={reposted}
       active={reposted}
-      emoji="🔁"
+      icon={<RepostGlyph className="h-4 w-4" />}
       count={count}
       label={reposted ? `Undo your repost of ${name}'s post` : `Repost ${name}'s post`}
       live
@@ -392,9 +403,61 @@ function RepostControl({
   );
 }
 
-function RepostGlyph() {
+/**
+ * Passing the link on, as opposed to passing the post on.
+ *
+ * Next to Repost deliberately, because the two are easy to confuse and the
+ * difference matters: a repost puts the post in your followers' feeds under
+ * your name, a share hands somebody a link and involves this site not at all.
+ *
+ * No count. Nobody is counting, and a 0 sitting here would suggest otherwise.
+ * Open to visitors too — you do not need an account to pass a link to a friend,
+ * and gating that would only stop the site being shared.
+ */
+function ShareControl({ id, name }: { id: string; name: string }) {
+  const { toast } = useToast();
+
+  async function share() {
+    const outcome = await sharePostLink(id);
+    if (outcome === "copied") toast("Link copied");
+    else if (outcome === "failed") toast("Couldn't copy the link", "info");
+    // "shared" — the native sheet already told them.
+  }
+
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" aria-hidden>
+    <ReactionButton
+      onClick={share}
+      icon={<ShareGlyph />}
+      label={`Share ${name}'s post`}
+      title="Share"
+    />
+  );
+}
+
+function ShareGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" aria-hidden>
+      <path
+        d="M12 15V4m0 0L8.5 7.5M12 4l3.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** Default size is the banner's; the footer control asks for a larger one. */
+function RepostGlyph({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${className} shrink-0`} fill="none" aria-hidden>
       <path
         d="M4 9V7.5A2.5 2.5 0 0 1 6.5 5H17m0 0-3-3m3 3-3 3M20 15v1.5a2.5 2.5 0 0 1-2.5 2.5H7m0 0 3 3m-3-3 3-3"
         stroke="currentColor"
@@ -407,12 +470,24 @@ function RepostGlyph() {
 }
 
 /**
- * One emoji, one number, no chrome. Shared so a reaction cannot end up looking
+ * One mark, one number, no chrome. Shared so a reaction cannot end up looking
  * more important than its neighbour by accident.
+ *
+ * The mark is either an emoji or a drawn glyph. Dhog and comments keep their
+ * emoji — 🙏 carries meaning here that no line drawing would — while repost and
+ * share use glyphs, because the colour in 🔁 and 📤 belongs to whoever drew the
+ * font rather than to this page, and a blue arrow sitting between two warm
+ * emoji reads as a stray piece of another interface. A glyph inherits
+ * currentColor, so it greys with the rest of the row and turns crimson with it
+ * when active.
+ *
+ * `count` is optional: sharing has no number, and a 0 next to it would be a
+ * count of something nobody is counting.
  */
 function ReactionButton({
   onClick,
   emoji,
+  icon,
   count,
   label,
   pressed,
@@ -422,8 +497,10 @@ function ReactionButton({
   ...rest
 }: {
   onClick: () => void;
-  emoji: string;
-  count: number;
+  /** One of these two. `icon` wins if both are somehow passed. */
+  emoji?: string;
+  icon?: React.ReactNode;
+  count?: number;
   label: string;
   /** Present for a toggle; omitted for a button that just does a thing. */
   pressed?: boolean;
@@ -445,12 +522,17 @@ function ReactionButton({
       } ${active ? "text-crimson font-bold" : "text-ink-soft hover:text-ink font-semibold"}`}
       {...rest}
     >
-      <span aria-hidden className={small ? "text-sm leading-none" : "text-base leading-none"}>
-        {emoji}
+      <span
+        aria-hidden
+        className={`inline-flex items-center ${small ? "text-sm leading-none" : "text-base leading-none"}`}
+      >
+        {icon ?? emoji}
       </span>
-      <span aria-live={live ? "polite" : undefined} className="tabular-nums">
-        {count}
-      </span>
+      {count === undefined ? null : (
+        <span aria-live={live ? "polite" : undefined} className="tabular-nums">
+          {count}
+        </span>
+      )}
     </button>
   );
 }

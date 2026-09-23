@@ -7,6 +7,7 @@ import { MockAuthProvider } from "@/components/mock-auth";
 import { getViewer } from "@/lib/auth";
 import { THEME_INIT_SCRIPT, ThemeProvider } from "@/components/theme";
 import { ToastProvider } from "@/components/toast";
+import { SiteChrome } from "@/components/site-chrome";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
@@ -69,15 +70,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {/* One answer to "is anyone signed in?", for the whole tree. */}
           <MockAuthProvider hasRealSession={Boolean(viewer)}>
             <ToastProvider>
-              <LungtaRail />
-              <SiteHeader />
+              {/* SiteChrome takes all of this away on /darbar, which is a
+                  console rather than a page of the site. Toasts stay outside
+                  it: the console raises them too. */}
+              <SiteChrome>
+                <LungtaRail />
+                <SiteHeader />
+              </SiteChrome>
               <main className="flex-1">{children}</main>
-              <SiteFooter />
-              <LoginModalHost />
-              {/* Signed-in only, and it decides that for itself. Mounted here
-                  so it survives navigation — a thread you are half-way through
-                  typing should not close because you opened a profile. */}
-              <Kura />
+              <SiteChrome>
+                <SiteFooter />
+                <LoginModalHost />
+                {/* Signed-in only, and it decides that for itself. Mounted here
+                    so it survives navigation — a thread you are half-way through
+                    typing should not close because you opened a profile. */}
+                <Kura />
+              </SiteChrome>
             </ToastProvider>
           </MockAuthProvider>
         </ThemeProvider>

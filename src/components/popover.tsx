@@ -81,3 +81,32 @@ export function PopoverPanel({
     </div>
   );
 }
+
+/**
+ * One row inside any menu built on top of this file — the "…" on a post and
+ * the click-to-open menu on a Kura message both use this, rather than each
+ * growing its own slightly-different button, so a menu item looks like a
+ * menu item everywhere it appears.
+ */
+export function MenuItem({
+  onClick,
+  tone = "normal",
+  children,
+}: {
+  onClick: () => void;
+  tone?: "normal" | "danger";
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={`hover:bg-elevated flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm font-semibold transition-colors ${
+        tone === "danger" ? "text-crimson" : "text-ink-soft"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}

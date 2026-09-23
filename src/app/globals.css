@@ -638,6 +638,25 @@ h4 {
     background-image: none;
   }
 
+  /* --- Kura wallpaper ----------------------------------------------------
+   *
+   * The doodle field behind a conversation (components/kura-backdrop.tsx).
+   * Only two things are set here, and both are the reason it stays readable:
+   * the colour it inherits, and how far it is turned down.
+   *
+   * Dark gets more, not less. A faint light stroke on a dark ground reads
+   * weaker than a faint dark stroke on a light one at the same alpha, so
+   * matching the numbers would make the pattern vanish in dark mode.
+   */
+  .kura-backdrop {
+    color: var(--color-ink);
+    opacity: 0.05;
+  }
+
+  :root[data-theme="dark"] .kura-backdrop {
+    opacity: 0.075;
+  }
+
   /* --- Marigold garland divider ----------------------------------------- */
   .garland {
     height: 14px;
